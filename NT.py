@@ -13,7 +13,7 @@ logging.basicConfig(
 MONGO_URI = "mongodb+srv://sa:Eduardo25@notifinance.zp3mm.mongodb.net"
 DB_NAME = "NT"
 COLLECTION_NAME = "alerts"
-API_URL = "https://api-twelve.onrender.com/get_current_price?symbol={}&crypto=true"
+API_URL = "https://api-twelve-613d.onrender.com/get_current_price?symbol={}&crypto=true"
 
 try:
     client = MongoClient(MONGO_URI)
@@ -22,7 +22,7 @@ try:
     logging.info("✅ Conectado a MongoDB → Base de datos: NT | Colección: alerts")
 except Exception as e:
     logging.error(f"❌ Error al conectar a MongoDB: {e}")
-    exit(1)  # Detener ejecución si no hay conexión
+    exit(1)
 
 async def fetch_price(session, symbol):
     """Obtiene el precio actual de la criptomoneda de forma asíncrona."""
@@ -49,20 +49,34 @@ async def send_notification(session, alert, current_price):
     if not notification_url:
         logging.warning(f"⚠️ No hay URL de notificación para {alert['cryptoSymbol']} (Usuario {alert['userId']})")
         return
-    
+
     alert_message = (
         f"🚀 **ALERTA DE PRECIO ACTIVADA** 🚀\n"
-        f"👤 Usuario: {alert['userId']}\n"
+        f"👤 Usuario: {alert['username']}\n"
         f"💰 Criptomoneda: {alert['cryptoSymbol']}\n"
         f"📈 Precio actual: ${current_price:,.4f}\n"
         f"🎯 Umbral: {'Por encima' if alert['condition'] else 'Por debajo'} de ${alert['targetPrice']:,.4f}\n"
     )
     payload = {"content": alert_message}
 
+    headers = {
+        "Authorization": "Bearer NotifinanceTK",
+        "Content-Type": "application/json"
+    }
+
     try:
-        async with session.post(notification_url, json=payload) as resp:
+        async with session.post(notification_url, json=payload, headers=headers) as resp:
             if resp.status in [200, 204]:
-                collection.update_one({"_id": alert["_id"]}, {"$set": {"isActive": False, "updatedAt": asyncio.get_event_loop().time()}})
+                collection.update_one(
+                    {"_id": alert["_id"]},
+                    {
+                        "$set": {
+                            "isActive": False,
+                           "isFulfilled": True,
+                            "updatedAt": asyncio.get_event_loop().time()
+                        }
+                    }
+                )
                 logging.info(f"✅ Notificación enviada para {alert['cryptoSymbol']} - Usuario {alert['userId']}")
             else:
                 logging.error(f"❌ Error al enviar notificación: {resp.status} - {await resp.text()}")
@@ -81,18 +95,15 @@ async def process_alerts():
 
     logging.info(f"📢 {len(active_alerts)} alertas activas encontradas.")
 
-    # Agrupar alertas por símbolo de criptomoneda
     alerts_group = {}
     for alert in active_alerts:
         symbol = alert["cryptoSymbol"]
         alerts_group.setdefault(symbol, []).append(alert)
 
     async with aiohttp.ClientSession() as session:
-        # Obtener precios en paralelo
         tasks = [asyncio.create_task(fetch_price(session, symbol)) for symbol in alerts_group]
         prices = await asyncio.gather(*tasks)
 
-        # Verificar alertas activadas
         notification_tasks = []
         for symbol, current_price in prices:
             if current_price is None:
