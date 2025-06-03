@@ -51,7 +51,7 @@ async def send_notification(session, alert, current_price):
         return
 
     alert_message = (
-        f"🚀 **ALERTA DE PRECIO ACTIVADA** 🚀\n"
+        f"🚀 **ALERTA DE PRECIO ACTIVADA TU CRYPTO A SIDO VENDIDA** 🚀\n"
         f"👤 Usuario: {alert['username']}\n"
         f"💰 Criptomoneda: {alert['cryptoSymbol']}\n"
         f"📈 Precio actual: ${current_price:,.4f}\n"
